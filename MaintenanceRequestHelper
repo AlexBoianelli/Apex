@@ -1,0 +1,95 @@
+public with sharing class MaintenanceRequestHelper {
+  
+ // Declaramos un método público y estático llamado updateworkOrders que toma dos parámetros: una lista de casos actualizados (updWorkOrders) 
+ // y un mapa de casos no actualizados (nonUpdCaseMap)
+ 
+  public static void updateworkOrders(List<Case> updWorkOrders, Map<Id,Case> nonUpdCaseMap) {
+       
+       //Declaramos un conjunto (set) vacío de identificadores (Ids) llamado validIds.
+       Set<Id> validIds = new Set<Id>();
+        
+        //Iniciamos un bucle for que itera sobre cada elemento (c) de la lista de casos actualizados (updWorkOrders).
+        For (Case c : updWorkOrders){
+        
+        // Comprobamos si el caso correspondiente a la misma identificación (Id) en el mapa de casos no actualizados (nonUpdCaseMap)
+        // no está cerrado (Status != 'Closed') y si el caso actual (c) está cerrado (Status == 'Closed').
+        if (nonUpdCaseMap.get(c.Id).Status != 'Closed' && c.Status == 'Closed'){
+               
+               //Comprobamos si el tipo de caso es "Reparación" o "Mantenimiento rutinario".
+               if (c.Type == 'Repair' || c.Type == 'Routine Maintenance'){
+                    
+                    //Agregamos la identificación (Id) del caso actual (c) al conjunto (set) de identificadores válidos (validIds).
+                    validIds.add(c.Id);
+                    
+             
+                }
+            }
+        }
+        
+        //Si el conjunto (set) de identificadores válidos (validIds) no está vacío, continuamos con el siguiente bloque de código
+        if (!validIds.isEmpty()){
+        
+            //Declaramos una lista vacía de casos llamada newCases. 
+            List<Case> newCases = new List<Case>();
+            
+            // Creamos un mapa que asigna identificadores de casos (Id) a casos cerrados (closedCasesM). Se utiliza una consulta para recuperar los casos cerrados
+            // correspondientes a los identificadores válidos (validIds) y sus campos relacionados.
+            Map<Id,Case> closedCasesM = new Map<Id,Case>([SELECT Id, Vehicle__c, Equipment__c, Equipment__r.Maintenance_Cycle__c,(SELECT Id,Equipment__c,Quantity__c FROM Equipment_Maintenance_Items__r) 
+                                                         FROM Case WHERE Id IN :validIds]);
+            
+            
+            //Declaramos un mapa vacío que asigna identificadores de casos (Id) a ciclos de mantenimiento (maintenanceCycles).
+            Map<Id,Decimal> maintenanceCycles = new Map<ID,Decimal>();
+            
+            
+            
+            // Ejecutamos una consulta agregada para encontrar el ciclo de mantenimiento mínimo (MIN) de los elementos de mantenimiento del equipo relacionados
+            // con los casos válidos (validIds). 
+            // Los resultados se almacenan en un arreglo de AggregateResult llamado results.
+            AggregateResult[] results = [SELECT Maintenance_Request__c, MIN(Equipment__r.Maintenance_Cycle__c)cycle FROM Equipment_Maintenance_Item__c WHERE Maintenance_Request__c IN :ValidIds GROUP BY Maintenance_Request__c];
+        
+        
+        //Iniciamos un bucle for que itera sobre cada resultado de la consulta agregada (ar) en el arreglo de resultados (results).
+        for (AggregateResult ar : results){ 
+            maintenanceCycles.put((Id) ar.get('Maintenance_Request__c'), (Decimal) ar.get('cycle'));
+        }
+            //El siguiente ciclo itera sobre los valores del mapa closedCasesMy crea un nuevo Caseregistro para cada uno de ellos con algunos valores predefinidos.
+            for(Case cc : closedCasesM.values()){
+                Case nc = new Case (
+                    ParentId = cc.Id,
+                Status = 'New',
+                    Subject = 'Routine Maintenance',
+                    Type = 'Routine Maintenance',
+                    Vehicle__c = cc.Vehicle__c,
+                    Equipment__c =cc.Equipment__c,
+                    Origin = 'Web',
+                    Date_Reported__c = Date.Today()
+                    
+                );
+                
+                
+                // Si el maintenanceCyclesmapa contiene una clave que coincide con la Iddel Caseregistro actual, el Date_Due__ccampo del nuevo 
+                // Caseregistro se establece en la fecha actual más el valor del ciclo de mantenimiento correspondiente en días.
+                If (maintenanceCycles.containskey(cc.Id)){
+                    nc.Date_Due__c = Date.today().addDays((Integer) maintenanceCycles.get(cc.Id));
+                }
+                
+                //Cada nuevo Caseregistro se agrega a la newCaseslista.
+                newCases.add(nc);
+            }
+           // Una vez que se completa el bucle, la newCases se inserta.
+           insert newCases;
+            
+           List<Equipment_Maintenance_Item__c> clonedWPs = new List<Equipment_Maintenance_Item__c>();
+           for (Case nc : newCases){
+                for (Equipment_Maintenance_Item__c wp : closedCasesM.get(nc.ParentId).Equipment_Maintenance_Items__r){
+                    Equipment_Maintenance_Item__c wpClone = wp.clone();
+                    wpClone.Maintenance_Request__c = nc.Id;
+                    ClonedWPs.add(wpClone);
+                    
+                }
+            }
+            insert ClonedWPs;
+        }
+    }
+}
