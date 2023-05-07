@@ -1,0 +1,59 @@
+public with sharing class WarehouseCalloutService {
+   
+   //Define una variable privada WAREHOUSE_URL que contiene la URL del servicio web externo que se va a llamar.
+   private static final String WAREHOUSE_URL = 'https://th-superbadge-apex.herokuapp.com/equipment';
+ 
+    //@future(callout=true)
+    
+    //Define un método público runWarehouseEquipmentSync() que se utiliza para realizar la llamada HTTP y actualizar los registros.
+    public static void runWarehouseEquipmentSync(){
+        
+        //Dentro del método runWarehouseEquipmentSync(), se crea un objeto Http para realizar la llamada HTTP y un objeto HttpRequest para configurar la solicitud.
+        Http http = new Http();
+        HttpRequest request = new HttpRequest();
+        
+        //La URL de la solicitud se establece en la URL del servicio web externo definido anteriormente y se establece el método de solicitud en "GET".
+        request.setEndpoint(WAREHOUSE_URL);
+        request.setMethod('GET');
+        
+        //Se realiza la llamada HTTP y se recibe una respuesta como un objeto HttpResponse
+        HttpResponse response = http.send(request);
+        
+        
+        List<Product2> warehouseEq = new List<Product2>();
+        
+        //Si el código de estado de la respuesta es 200 (es decir, la solicitud fue exitosa), se utiliza la respuesta para actualizar los registros en Salesforce.
+        if (response.getStatusCode() == 200){
+        
+        //Se convierte la respuesta de la llamada HTTP en una lista de objetos no tipados utilizando el método JSON.deserializeUntyped()
+            List<Object> jsonResponse = (List<Object>)JSON.deserializeUntyped(response.getBody());
+            System.debug(response.getBody());
+            
+            // Se recorre cada objeto en la lista de respuesta y se convierte en un objeto Product2 de Salesforce
+            // estableciendo los campos del objeto con los valores del objeto de respuesta.
+            for (Object eq : jsonResponse){
+                Map<String,Object> mapJson = (Map<String,Object>)eq;
+                Product2 myEq = new Product2();
+                myEq.Replacement_Part__c = (Boolean) mapJson.get('replacement');
+                myEq.Name = (String) mapJson.get('name');
+                myEq.Maintenance_Cycle__c = (Integer) mapJson.get('maintenanceperiod');
+                myEq.Lifespan_Months__c = (Integer) mapJson.get('lifespan');
+                myEq.Cost__c = (Decimal) mapJson.get('lifespan');
+                myEq.Warehouse_SKU__c = (String) mapJson.get('sku');
+                myEq.Current_Inventory__c = (Double) mapJson.get('quantity');
+                
+               //Se agrega cada objeto Product2 a una lista de warehouseEq.
+               warehouseEq.add(myEq);
+            }
+            
+            // Si se ha agregado al menos un elemento a la lista, se realiza una operación upsert para actualizar los registros de Product2 en Salesforce
+            // y se imprime un mensaje de registro para indicar que los registros han sido actualizados.
+            if (warehouseEq.size() > 0){
+                upsert warehouseEq;
+                System.debug('Your equipment was synced with the warehouse one');
+                System.debug(warehouseEq);
+            }
+            
+        }
+    }
+}
